@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+
+	<title>PA #2</title>
+	<style>
+		body {
+			background-color: #EEEEEE;
+		}
+		#canvas-holder {
+			display: flex;
+			align-items: center;
+		}
+
+		#canvas-holder canvas{
+			width: 650px;
+			height: 650px;
+			margin: 50px auto;
+		}
+
+		.controllers {
+			display: flex;
+			flex-direction: column;
+			box-shadow: 0px 0px 4px rgb(0 0 0 / 50%);
+			margin: 0 auto;
+		}
+
+		.big .box {
+
+		}
+
+		.box {
+			margin: 20px;
+		}
+	</style>
+
+	<!--
+        An example using a TrackballRotator, defined in TrackballRotator.js,
+        to implement rotation by mouse.
+    -->
+
+	<script src="./Utils/trackball-rotator.js"></script>
+	<script src="https://webgl2fundamentals.org/webgl/resources/m4.js"></script>
+	<script src="https://webglfundamentals.org/webgl/resources/webgl-lessons-ui.js"></script>
+	<script src="./shader.gpu"></script>
+	<script src="./main.js"></script>
+
+
+</head>
+<body onload="init()">
+
+<div id="canvas-holder">
+	<div class="controllers">
+		<div class="box">
+			<div id="ui2"></div>
+		</div>
+		<div class="box">
+			<div id="ui4"></div>
+		</div>
+		<div class="box">
+			<div id="ui"></div>
+		</div>
+		<div class="box">
+			<div id="ui3"></div>
+		</div>
+	</div>
+	<canvas width="650" height="650" id="webglcanvas" style="background-color:red"></canvas>
+
+	<div class="controllers big">
+		<div class="box">
+			<div id="convergence"></div>
+		</div>
+		<div class="box">
+			<div id="eyeSeparation"></div>
+		</div>
+		<div class="box">
+			<div id="FOV"></div>
+		</div>
+		<div class="box">
+			<div id="nearClippingDistance"></div>
+		</div>
+	</div>
+</div>
+
+
+
+
+
+</body></html>
