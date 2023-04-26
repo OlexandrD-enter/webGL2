@@ -322,6 +322,7 @@ let rotationMatrix = m4.identity();
       DeviceMotionEvent.requestPermission()
         .then((permissionState) => {
           if (permissionState === "granted") {
+            console.log("GRANTED")
             window.addEventListener(
               "deviceorientation",
               (e) => handleDeviceOrientation(e),
@@ -336,12 +337,25 @@ let rotationMatrix = m4.identity();
   } else {
     console.log("DeviceOrientationEvent is not supported");
   }
-}
+}*/
 
 function initializeDeviceOrientation() {
   if (window.DeviceOrientationEvent) {
     if (typeof DeviceMotionEvent.requestPermission === 'function') {
-      console.log("DeviceMotionEvent.requestPermission() is supported. Use button to request permission.");
+      DeviceMotionEvent.requestPermission()
+      .then((permissionState) => {
+        if (permissionState === "granted") {
+          console.log("GRANTED")
+          window.addEventListener(
+            "deviceorientation",
+            (e) => handleDeviceOrientation(e),
+            true
+          );
+        } else {
+          console.log("DeviceOrientationEvent permission not granted");
+        }
+      })
+      .catch(console.error);
     } else {
       // For browsers that don't support requestPermission()
       window.addEventListener("deviceorientation", (e) => handleDeviceOrientation(e), true);
@@ -349,37 +363,11 @@ function initializeDeviceOrientation() {
   } else {
     console.log("DeviceOrientationEvent is not supported");
   }
-}*/
-function initializeDeviceOrientation() {
-  if (window.DeviceOrientationEvent) {
-    if (typeof DeviceMotionEvent.requestPermission === "function") {
-      DeviceMotionEvent.requestPermission()
-        .then((permissionState) => {
-          if (permissionState === "granted") {
-            window.addEventListener(
-              "deviceorientation",
-              (e) => handleDeviceOrientation(e),
-              true
-            );
-          } else {
-            console.log("DeviceOrientationEvent permission not granted");
-          }
-        })
-        .catch(console.error);
-    } else {
-      // For browsers that don't support requestPermission()
-      window.addEventListener(
-        "deviceorientation",
-        (e) => handleDeviceOrientation(e),
-        true
-      );
-    }
-  } else {
-    console.log("DeviceOrientationEvent is not supported");
-  }
 }
 
+
 document.addEventListener("DOMContentLoaded", initializeDeviceOrientation);
+
 
 function handleDeviceOrientation(event) {
   if (event.alpha === null || event.beta === null || event.gamma === null) {
@@ -471,7 +459,7 @@ function draw() {
   let scaleM = m4.scaling(scale, scale, scale);
 
   /* Get the view matrix from the SimpleRotator object.*/
-
+  
   let modelView = rotationMatrix;
   //let modelView = spaceball.getViewMatrix();
 
