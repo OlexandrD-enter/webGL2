@@ -316,7 +316,8 @@ function rotationZ(angle) {
 
 let rotationMatrix = m4.identity();
 
-/*function requestDeviceOrientationPermission() {
+function requestDeviceOrientationPermission() {
+  console.log("request");
   if (window.DeviceOrientationEvent) {
     if (typeof DeviceMotionEvent.requestPermission === "function") {
       DeviceMotionEvent.requestPermission()
@@ -337,25 +338,48 @@ let rotationMatrix = m4.identity();
   } else {
     console.log("DeviceOrientationEvent is not supported");
   }
-}*/
+
+  if (typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(permissionState => {
+        if (permissionState === 'granted') {
+          window.addEventListener("devicemotion", e => handleDeviceMotion(e), true);
+        } else {
+          console.log("DeviceMotionEvent permission not granted");
+        }
+      })
+      .catch(console.error);
+  } else {
+    console.log("DeviceMotionEvent.requestPermission() is not supported");
+  }
+}
+
+function handleDeviceMotion(event) {
+  if (event.acceleration === null || event.rotationRate === null) {
+    console.log("Device motion data is not available");
+    return;
+  }
+
+  // Access device motion data
+  const accelerationX = event.acceleration.x;
+  const accelerationY = event.acceleration.y;
+  const accelerationZ = event.acceleration.z;
+
+  const rotationRateAlpha = event.rotationRate.alpha;
+  const rotationRateBeta = event.rotationRate.beta;
+  const rotationRateGamma = event.rotationRate.gamma;
+
+  // Process device motion data if needed
+  // For example, you can log the data to the console
+  console.log(`Acceleration: x=${accelerationX}, y=${accelerationY}, z=${accelerationZ}`);
+  console.log(`Rotation Rate: alpha=${rotationRateAlpha}, beta=${rotationRateBeta}, gamma=${rotationRateGamma}`);
+}
+
 
 function initializeDeviceOrientation() {
   if (window.DeviceOrientationEvent) {
     if (typeof DeviceMotionEvent.requestPermission === 'function') {
-      DeviceMotionEvent.requestPermission()
-      .then((permissionState) => {
-        if (permissionState === "granted") {
-          console.log("GRANTED")
-          window.addEventListener(
-            "deviceorientation",
-            (e) => handleDeviceOrientation(e),
-            true
-          );
-        } else {
-          console.log("DeviceOrientationEvent permission not granted");
-        }
-      })
-      .catch(console.error);
+      console.log("DeviceMotionEvent.requestPermission() is supported. Use button to request permission.");
     } else {
       // For browsers that don't support requestPermission()
       window.addEventListener("deviceorientation", (e) => handleDeviceOrientation(e), true);
