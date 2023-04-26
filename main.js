@@ -444,6 +444,7 @@ function draw() {
   let scaleM = m4.scaling(scale, scale, scale);
 
   /* Get the view matrix from the SimpleRotator object.*/
+  requestDeviceOrientationPermission();
   let modelView = rotationMatrix;
   //let modelView = spaceball.getViewMatrix();
 
