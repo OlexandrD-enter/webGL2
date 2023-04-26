@@ -1,6 +1,5 @@
 "use strict";
 
-
 // Vertex shader
 const vertexShaderSource = `
 attribute vec3 vertex;
@@ -19,7 +18,6 @@ void main() {
     v_texcoord = texCoord;
 	v_normal = mat3(u_world) * a_normal;
 }`;
-
 
 // Fragment shader
 const fragmentShaderSource = `
@@ -318,27 +316,59 @@ function rotationZ(angle) {
 
 let rotationMatrix = m4.identity();
 
-
-if (window.DeviceOrientationEvent) {
-  window.addEventListener("deviceorientation", function handleDeviceOrientation(event){
-    if (event.alpha === null || event.beta === null || event.gamma === null) {
-      console.log("Device orientation data is not available");
-      return;
+function requestDeviceOrientationPermission() {
+  if (window.DeviceOrientationEvent) {
+    if (typeof DeviceMotionEvent.requestPermission === "function") {
+      DeviceMotionEvent.requestPermission()
+        .then((permissionState) => {
+          if (permissionState === "granted") {
+            window.addEventListener(
+              "deviceorientation",
+              (e) => handleDeviceOrientation(e),
+              true
+            );
+          } else {
+            console.log("DeviceOrientationEvent permission not granted");
+          }
+        })
+        .catch(console.error);
     }
-  
-    const alpha = (event.alpha * Math.PI) / 180;
-    const beta = (event.beta * Math.PI) / 180;
-    const gamma = (event.gamma * Math.PI) / 180;
-  
-    const Rx = rotationX(beta);
-    const Ry = rotationY(gamma);
-    const Rz = rotationZ(alpha);
-  
-    rotationMatrix = m4.multiply(Rz, m4.multiply(Rx, Ry));
-    draw();
-  }, true);
-} else {
-  console.log("DeviceOrientationEvent is not supported");
+  } else {
+    console.log("DeviceOrientationEvent is not supported");
+  }
+}
+
+function initializeDeviceOrientation() {
+  if (window.DeviceOrientationEvent) {
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      console.log("DeviceMotionEvent.requestPermission() is supported. Use button to request permission.");
+    } else {
+      // For browsers that don't support requestPermission()
+      window.addEventListener("deviceorientation", (e) => handleDeviceOrientation(e), true);
+    }
+  } else {
+    console.log("DeviceOrientationEvent is not supported");
+  }
+}
+
+document.addEventListener("DOMContentLoaded", initializeDeviceOrientation);
+
+
+function handleDeviceOrientation(event) {
+  if (event.alpha === null || event.beta === null || event.gamma === null) {
+    console.log("Device orientation data is not available");
+    return;
+  }
+
+  const alpha = (event.alpha * Math.PI) / 180;
+  const beta = (event.beta * Math.PI) / 180;
+  const gamma = (event.gamma * Math.PI) / 180;
+
+  const Rx = rotationX(beta);
+  const Ry = rotationY(gamma);
+  const Rz = rotationZ(alpha);
+  rotationMatrix = m4.multiply(Rz, m4.multiply(Rx, Ry));
+  draw();
 }
 
 var alpha = 0;
