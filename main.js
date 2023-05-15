@@ -1,5 +1,6 @@
 "use strict";
 
+
 // Vertex shader
 const vertexShaderSource = `
 attribute vec3 vertex;
@@ -18,6 +19,7 @@ void main() {
     v_texcoord = texCoord;
 	v_normal = mat3(u_world) * a_normal;
 }`;
+
 
 // Fragment shader
 const fragmentShaderSource = `
@@ -66,27 +68,17 @@ let colorLocation;
 let normalLocation;
 let normalBuffer;
 
-let data = { frame: false, color: true, texture: false, anaglyph: true };
 let worldViewProjectionLocation;
 let worldLocation;
 
 let scale = 1.0;
-let convergence = 50;
-let eyeSeparation = 0.06;
+let convergence = 30;
+let eyeSeparation = 0.1;
 let FOV = Math.PI / 8;
-let nearClippingDistance = 8;
+let nearClippingDistance = 7;
 
 let AnaglyphCamera;
-/* Draws a WebGL primitive.  The first parameter must be one of the constants
- * that specify primitives:  gl.POINTS, gl.LINES, gl.LINE_LOOP, gl.LINE_STRIP,
- * gl.TRIANGLES, gl.TRIANGLE_STRIP, gl.TRIANGLE_FAN.  The second parameter must
- * be an array of 4 numbers in the range 0.0 to 1.0, giving the RGBA color of
- * the color of the primitive.  The third parameter must be an array of numbers.
- * The length of the array must be a multiple of 3.  Each triple of numbers provides
- * xyz-coords for one vertex for the primitive.  This assumes that u_color is the
- * location of a color uniform in the shader program, a_coords_loc is the location of
- * the coords attribute, and a_coords_buffer is a VBO for the coords attribute.
- */
+
 function degToRad(d) {
   return (d * Math.PI) / 180;
 }
@@ -204,98 +196,88 @@ function StereoCamera(
   };
 }
 
-function getFunc(r, u, l = 0) {
-  let m = 6;
-  let b = 6 * m;
-  let a = 4 * m;
-  let n = 0.1;
-  let k = 30;
-  let phi = 0;
-  let omega = (m * Math.PI) / b;
-  let x = (r * Math.cos(u)) / k;
-  let y = (r * Math.sin(u)) / k;
-  let z = (a * Math.exp(-n * r) * Math.sin(omega * r + phi)) / k;
-  return [x, y, z + l];
+let X = (u, v) =>
+  (R + a * Math.cos(u / 2)) * Math.cos(u / 3) +
+  a * Math.cos(u / 3) * Math.cos(v - Math.PI);
+let Y = (u, v) =>
+  (R + a * Math.cos(u / 2)) * Math.sin(u / 3) +
+  a * Math.sin(u / 3) * Math.cos(v - Math.PI);
+let Z = (u, v) => a + Math.sin(u / 2) + a * Math.sin(v - Math.PI);
+
+let diapazonUFrom = 0;
+let diapazonUTo = 12 * Math.PI;
+let diapazonVFrom = 0;
+let diapazonVTo = 2 * Math.PI;
+let step = 0.8;
+let a = 0.25;
+let R = 0.8;
+
+function deg2rad(angle) {
+  return (angle * Math.PI) / 180;
 }
 
-function getVector1(phi, v) {
-  let delta = 0.01;
-  let point1 = getFunc(phi, v);
-  let point2 = getFunc(phi + delta, v);
-  return [point2[0] - point1[0], point2[1] - point1[1], point2[2] - point1[2]];
+const calcDerU = (u, v, dU) => [
+  (X(u + dU, v) - X(u, v)) / deg2rad(dU),
+  (Y(u + dU, v) - Y(u, v)) / deg2rad(dU),
+  (Z(u + dU, v) - Z(u, v)) / deg2rad(dU),
+];
+
+const calcDerV = (u, v, dV) => [
+  (X(u, v + dV) - X(u, v)) / deg2rad(dV),
+  (Y(u, v + dV) - Y(u, v)) / deg2rad(dV),
+  (Z(u, v + dV) - Z(u, v)) / deg2rad(dV),
+];
+
+function DrawSurface() {
+  gl.enableVertexAttribArray(iAttribTexture);
+  gl.bindBuffer(gl.ARRAY_BUFFER, iTexBuffer);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([
+      [0, 0, 0],
+      [0, 1, 0],
+      [0, 1, 1],
+      [0, 0, 1],
+    ]),
+    gl.STREAM_DRAW
+  );
+  gl.vertexAttribPointer(iAttribTexture, 2, gl.FLOAT, false, 0, 0);
+
+  let vertexList = [];
+  let normalsList = [];
+
+  let deltaU = 0.001;
+  let deltaV = 0.001;
+
+  for (let u = diapazonUFrom; u <= diapazonUTo; u += step) {
+    for (let v = diapazonVFrom; v <= diapazonVTo; v += step) {
+      const u0 = u;
+      const v0 = v;
+      const u1 = u + step;
+      const v1 = v + step;
+
+      let x0 = X(u0, v0);
+      let y0 = Y(u0, v0);
+      let z0 = Z(u0, v0);
+
+      let xR = X(u1, v0);
+      let yR = Y(u1, v0);
+      let zR = Z(u1, v0);
+
+      vertexList.push(x0, z0, y0);
+      vertexList.push(xR, zR, yR);
+
+      normalsList.push(
+        ...m4.cross(calcDerU(u0, v0, deltaU), calcDerV(u0, v0, deltaV))
+      );
+      normalsList.push(
+        ...m4.cross(calcDerU(u1, v0, deltaU), calcDerV(u1, v0, deltaV))
+      );
+    }
+    drawPrimitive(gl.TRIANGLE_STRIP, [0.5, 1, 0.5, 1], vertexList, normalsList); // цвет
+  }
 }
 
-function getVector2(phi, v) {
-  let delta = 0.01;
-  let point1 = getFunc(phi, v);
-  let point2 = getFunc(phi, v + delta);
-  return [point2[0] - point1[0], point2[1] - point1[1], point2[2] - point1[2]];
-}
-
-function onceVector(vec) {
-  let len = Math.hypot(vec[0], vec[1], vec[2]);
-  return [vec[0] / len, vec[1] / len, vec[2] / len];
-}
-
-function getNormal(phi, v) {
-  let vec1 = getVector1(phi, v);
-  let vec2 = getVector2(phi, v);
-
-  let x = vec1[1] * vec2[2] - vec1[2] * vec2[1];
-  let y = vec1[2] * vec2[0] - vec1[0] * vec2[2];
-  let z = vec1[0] * vec2[1] - vec1[1] * vec2[0];
-  return onceVector([x, y, z]);
-}
-
-function getNormal2(phi, v) {
-  let vec1 = getVector1(phi, v);
-  let vec2 = getVector2(phi, v);
-
-  let x = vec1[1] * vec2[2] - vec1[2] * vec2[1];
-  let y = vec1[2] * vec2[0] - vec1[0] * vec2[2];
-  let z = vec1[0] * vec2[1] - vec1[1] * vec2[0];
-  return onceVector([-x, -y, -z]);
-}
-
-var degtorad = Math.PI / 180; // Degree-to-Radian conversion
-
-/*function getRotationMatrix( alpha, beta, gamma ) {
-
-    var _x = beta  ? beta  * degtorad : 0; // beta value
-    var _y = gamma ? gamma * degtorad : 0; // gamma value
-    var _z = alpha ? alpha * degtorad : 0; // alpha value
-
-    var cX = Math.cos( _x );
-    var cY = Math.cos( _y );
-    var cZ = Math.cos( _z );
-    var sX = Math.sin( _x );
-    var sY = Math.sin( _y );
-    var sZ = Math.sin( _z );
-
-    //
-    // ZXY rotation matrix construction.
-    //
-
-    var m11 = cZ * cY - sZ * sX * sY;
-    var m12 = - cX * sZ;
-    var m13 = cY * sZ * sX + cZ * sY;
-
-    var m21 = cY * sZ + cZ * sX * sY;
-    var m22 = cZ * cX;
-    var m23 = sZ * sY - cZ * cY * sX;
-
-    var m31 = - cX * sY;
-    var m32 = sX;
-    var m33 = cX * cY;
-
-    return [
-        m11,    m12,    m13, 0,
-        m21,    m22,    m23, 0,
-        m31,    m32,    m33, 0,
-        0,      0,      0,   1
-    ];
-
-};*/
 function rotationX(angle) {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
@@ -316,84 +298,161 @@ function rotationZ(angle) {
 
 let rotationMatrix = m4.identity();
 
-function requestDeviceOrientationPermission() {
-  console.log("request");
-  if (window.DeviceOrientationEvent) {
-    if (typeof DeviceMotionEvent.requestPermission === "function") {
-      DeviceMotionEvent.requestPermission()
-        .then((permissionState) => {
-          if (permissionState === "granted") {
-            console.log("GRANTED")
-            window.addEventListener(
-              "deviceorientation",
-              (e) => handleDeviceOrientation(e),
-              true
-            );
-          } else {
-            console.log("DeviceOrientationEvent permission not granted");
-          }
-        })
-        .catch(console.error);
-    }
-  } else {
-    console.log("DeviceOrientationEvent is not supported");
-  }
+/*function requestDeviceOrientation() {
+  if(typeof DeviceOrientationEvent !== 'undefined' &&
+    typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+          .then(response => {
+              console.log(response);
+              if (response === 'granted') {
+                  console.log('Permission granted');
+                  window.addEventListener('deviceorientation', e => {...}, true); 
+              }
+          }).catch((err => {
+          console.log('Err', err);
+      }));
+  } else
+      console.log('not iOS');        
+}*/
 
+/*if (window.DeviceOrientationEvent) {
   if (typeof DeviceMotionEvent.requestPermission === 'function') {
     DeviceMotionEvent.requestPermission()
       .then(permissionState => {
         if (permissionState === 'granted') {
-          window.addEventListener("devicemotion", e => handleDeviceMotion(e), true);
+          window.addEventListener("deviceorientation", e => handleDeviceOrientation(e) , true);
         } else {
-          console.log("DeviceMotionEvent permission not granted");
+          console.log("DeviceOrientationEvent permission not granted");
         }
       })
       .catch(console.error);
   } else {
-    console.log("DeviceMotionEvent.requestPermission() is not supported");
+    // For browsers that don't support requestPermission()
+    window.addEventListener("deviceorientation", e => handleDeviceOrientation(e), true);
   }
+} else {
+  console.log("DeviceOrientationEvent is not supported");
+}*/
+
+/*if ('Gyroscope' in window) {
+  const sensor = new Gyroscope();
+  sensor.addEventListener('reading', handleOrientation);
+  sensor.start();
 }
 
-function handleDeviceMotion(event) {
-  if (event.acceleration === null || event.rotationRate === null) {
-    console.log("Device motion data is not available");
-    return;
-  }
+function handleOrientation() {
+  const alpha = sensor.x; // Z-axis rotation
+  const beta = sensor.y; // X-axis rotation
+  const gamma = sensor.z; // Y-axis rotation
 
-  // Access device motion data
-  const accelerationX = event.acceleration.x;
-  const accelerationY = event.acceleration.y;
-  const accelerationZ = event.acceleration.z;
+  rotationMatrix = m4.rotationZ(alpha) * m4.rotationX(beta) * m4.rotationY(gamma);
+}*/
 
-  const rotationRateAlpha = event.rotationRate.alpha;
-  const rotationRateBeta = event.rotationRate.beta;
-  const rotationRateGamma = event.rotationRate.gamma;
-
-  // Process device motion data if needed
-  // For example, you can log the data to the console
-  console.log(`Acceleration: x=${accelerationX}, y=${accelerationY}, z=${accelerationZ}`);
-  console.log(`Rotation Rate: alpha=${rotationRateAlpha}, beta=${rotationRateBeta}, gamma=${rotationRateGamma}`);
+if ('Gyroscope' in window) {
+  const sensor = new Gyroscope();
+  sensor.addEventListener('reading', e => onSensorChanged(e));
+  sensor.start();
 }
 
 
-function initializeDeviceOrientation() {
-  if (window.DeviceOrientationEvent) {
-    if (typeof DeviceMotionEvent.requestPermission === 'function') {
-      console.log("DeviceMotionEvent.requestPermission() is supported. Use button to request permission.");
-    } else {
-      // For browsers that don't support requestPermission()
-      window.addEventListener("deviceorientation", (e) => handleDeviceOrientation(e), true);
+const NS2S = 1.0 / 1000000000.0;
+const deltaRotationVector = [0.0, 0.0, 0.0, 0.0];
+let timestamp = 0.0;
+
+function onSensorChanged(event) {
+  // This timestep's delta rotation to be multiplied by the current rotation
+  // after computing it from the gyro sample data.
+  if (timestamp !== 0) {
+    const dT = (event.timestamp - timestamp) * NS2S;
+    // Axis of the rotation sample, not normalized yet.
+    let axisX = event.values[0];
+    let axisY = event.values[1];
+    let axisZ = event.values[2];
+
+    // Calculate the angular speed of the sample
+    const omegaMagnitude = Math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ);
+
+    // Normalize the rotation vector if it's big enough to get the axis
+    // (that is, EPSILON should represent your maximum allowable margin of error)
+    const EPSILON = 0.000001;
+    if (omegaMagnitude > EPSILON) {
+      axisX /= omegaMagnitude;
+      axisY /= omegaMagnitude;
+      axisZ /= omegaMagnitude;
     }
-  } else {
-    console.log("DeviceOrientationEvent is not supported");
+
+    // Integrate around this axis with the angular speed by the timestep
+    // in order to get a delta rotation from this sample over the timestep
+    // We will convert this axis-angle representation of the delta rotation
+    // into a quaternion before turning it into the rotation matrix.
+    const thetaOverTwo = omegaMagnitude * dT / 2.0;
+    const sinThetaOverTwo = Math.sin(thetaOverTwo);
+    const cosThetaOverTwo = Math.cos(thetaOverTwo);
+    deltaRotationVector[0] = sinThetaOverTwo * axisX;
+    deltaRotationVector[1] = sinThetaOverTwo * axisY;
+    deltaRotationVector[2] = sinThetaOverTwo * axisZ;
+    deltaRotationVector[3] = cosThetaOverTwo;
   }
+  timestamp = event.timestamp;
+  const deltaRotationMatrix = new Float32Array(9);
+  rotationMatrix = getRotationMatrixFromVector(deltaRotationMatrix, deltaRotationVector);
+}
+
+function getRotationMatrixFromVector(R, rotationVector) {
+  let q0;
+  const q1 = rotationVector[0];
+  const q2 = rotationVector[1];
+  const q3 = rotationVector[2];
+
+  if (rotationVector.length >= 4) {
+    q0 = rotationVector[3];
+  } else {
+    q0 = 1 - q1 * q1 - q2 * q2 - q3 * q3;
+    q0 = (q0 > 0) ? Math.sqrt(q0) : 0;
+  }
+
+  const sq_q1 = 2 * q1 * q1;
+  const sq_q2 = 2 * q2 * q2;
+  const sq_q3 = 2 * q3 * q3;
+  const q1_q2 = 2 * q1 * q2;
+  const q3_q0 = 2 * q3 * q0;
+  const q1_q3 = 2 * q1 * q3;
+  const q2_q0 = 2 * q2 * q0;
+  const q2_q3 = 2 * q2 * q3;
+  const q1_q0 = 2 * q1 * q0;
+
+  if (R.length === 9) {
+    R[0] = 1 - sq_q2 - sq_q3;
+    R[1] = q1_q2 - q3_q0;
+    R[2] = q1_q3 + q2_q0;
+    R[3] = q1_q2 + q3_q0;
+    R[4] = 1 - sq_q1 - sq_q3;
+    R[5] = q2_q3 - q1_q0;
+    R[6] = q1_q3 - q2_q0;
+    R[7] = q2_q3 + q1_q0;
+    R[8] = 1 - sq_q1 - sq_q2;
+  } else if (R.length === 16) {
+    R[0] = 1 - sq_q2 - sq_q3;
+    R[1] = q1_q2 - q3_q0;
+    R[2] = q1_q3 + q2_q0;
+    R[3] = 0.0;
+    R[4] = q1_q2 + q3_q0;
+    R[5] = 1 - sq_q1 - sq_q3;
+    R[6] = q2_q3 - q1_q0;
+    R[7] = 0.0;
+    R[8] = q1_q3 - q2_q0;
+    R[9] = q2_q3 + q1_q0;
+    R[10] = 1 - sq_q1 - sq_q2;
+    R[11] = 0.0;
+    R[12] = R[13] = R[14] = 0.0;
+    R[15] = 1.0;
+  }
+  return R;
 }
 
 
-document.addEventListener("DOMContentLoaded", initializeDeviceOrientation);
 
-
-function handleDeviceOrientation(event) {
+/*function handleDeviceOrientation(event){
   if (event.alpha === null || event.beta === null || event.gamma === null) {
     console.log("Device orientation data is not available");
     return;
@@ -402,63 +461,15 @@ function handleDeviceOrientation(event) {
   const alpha = (event.alpha * Math.PI) / 180;
   const beta = (event.beta * Math.PI) / 180;
   const gamma = (event.gamma * Math.PI) / 180;
-
+  
   const Rx = rotationX(beta);
   const Ry = rotationY(gamma);
   const Rz = rotationZ(alpha);
   rotationMatrix = m4.multiply(Rz, m4.multiply(Rx, Ry));
   draw();
-}
+}*/
 
-var alpha = 0;
-var beta = 0;
-var gamma = 0;
 
-function DrawSurface(getNormal, l = 0) {
-  const vStep = 0.3;
-  const phiStep = 2.5;
-  const size = 50;
-
-  gl.enableVertexAttribArray(iAttribTexture);
-  gl.bindBuffer(gl.ARRAY_BUFFER, iTexBuffer);
-  gl.bufferData(
-    gl.ARRAY_BUFFER,
-    new Float32Array([
-      [0, 0, 0],
-      [0, 1, 0],
-      [0, 1, 1],
-      [0, 0, 1],
-    ]),
-    gl.STREAM_DRAW
-  );
-  gl.vertexAttribPointer(iAttribTexture, 2, gl.FLOAT, false, 0, 0);
-
-  for (let v = -size; v <= size; v += vStep) {
-    let positions = [];
-    let normals = [];
-
-    for (let phi = 0; phi <= size; phi += phiStep) {
-      positions = positions.concat(getFunc(phi, v, l));
-      normals = normals.concat(getNormal(phi, v));
-      //console.log(getFunc(phi, v))
-
-      positions = positions.concat(getFunc(phi, v + vStep, l));
-      normals = normals.concat(getNormal(phi, v + vStep));
-    }
-    if (data.texture)
-      drawPrimitive(
-        gl.TRIANGLE_STRIP,
-        [0.6, 0.6, 0.6, 1],
-        positions,
-        normals,
-        positions
-      ); //текстура
-    if (data.color)
-      drawPrimitive(gl.TRIANGLE_STRIP, [0.5, 1, 0.5, 1], positions, normals); // цвет
-    if (data.frame)
-      drawPrimitive(gl.LINE_STRIP, [0, 0, 0, 1], positions, normals); // линии
-  }
-}
 /* Draws a colored cube, along with a set of coordinate axes.
  * (Note that the use of the above drawPrimitive function is not an efficient
  * way to draw with WebGL.  Here, the geometry is so simple that it doesn't matter.)
@@ -483,11 +494,9 @@ function draw() {
   let scaleM = m4.scaling(scale, scale, scale);
 
   /* Get the view matrix from the SimpleRotator object.*/
-  
   let modelView = rotationMatrix;
-  //let modelView = spaceball.getViewMatrix();
 
-  let rotateToPointZero = m4.axisRotation([-1, 0, 0], 1.57);
+  let rotateToPointZero = m4.axisRotation([-0.5, 0.2, 0.3], 1.4);
   let translateToPointZero = m4.translation(0, 0, -10);
 
   let matAccum0 = m4.multiply(scaleM, modelView);
@@ -505,35 +514,20 @@ function draw() {
   //gl.uniformMatrix4fv(worldViewProjectionLocation, false, matAccum0);
   gl.uniformMatrix4fv(worldLocation, false, matAccum1);
 
-  if (data.anaglyph) {
-    gl.colorMask(true, false, false, false);
-    DrawSurface(getNormal);
-    DrawSurface(getNormal2, -0.015);
+  gl.colorMask(true, false, false, false);
+  DrawSurface();
 
-    gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
 
-    projection = AnaglyphCamera.mRightProjectionMatrix;
-    matAccum3 = m4.multiply(AnaglyphCamera.mRightModelViewMatrix, matAccum2);
-    modelViewProjection = m4.multiply(projection, matAccum3);
+  projection = AnaglyphCamera.mRightProjectionMatrix;
+  matAccum3 = m4.multiply(AnaglyphCamera.mRightModelViewMatrix, matAccum2);
+  modelViewProjection = m4.multiply(projection, matAccum3);
 
-    gl.uniformMatrix4fv(iModelViewProjectionMatrix, false, modelViewProjection);
+  gl.uniformMatrix4fv(iModelViewProjectionMatrix, false, modelViewProjection);
 
-    gl.colorMask(false, true, true, false);
-    DrawSurface(getNormal);
-    DrawSurface(getNormal2, -0.015);
-    gl.colorMask(true, true, true, true);
-  } else {
-    DrawSurface(getNormal);
-    DrawSurface(getNormal2, -0.015);
-  }
-
-  //gl.drawArrays(gl.TRIANGLES, 0, 16 * 6);
-  // Draw coordinate axes as thick colored lines that extend through the cube. */
-  gl.lineWidth(4);
-  drawPrimitive(gl.LINES, [1, 0, 0, 1], [-2, 0, 0, 2, 0, 0]);
-  drawPrimitive(gl.LINES, [0, 1, 0, 1], [0, -2, 0, 0, 2, 0]);
-  drawPrimitive(gl.LINES, [0, 0, 1, 1], [0, 0, -2, 0, 0, 2]);
-  gl.lineWidth(1);
+  gl.colorMask(false, true, true, false);
+  DrawSurface();
+  gl.colorMask(true, true, true, true);
 }
 
 /* Initialize the WebGL context. Called from init() */
@@ -558,7 +552,6 @@ function initWebGL() {
     "u_reverseLightDirection"
   );
 
-  //worldViewProjectionLocation = gl.getUniformLocation(program, "u_worldViewProjection");
   worldLocation = gl.getUniformLocation(program, "u_world");
 
   iVertexBuffer = gl.createBuffer();
@@ -566,24 +559,8 @@ function initWebGL() {
 
   // Создаём буфер для нормалей
   normalBuffer = gl.createBuffer();
-  // Привязываем его к ARRAY_BUFFER (условно говоря, ARRAY_BUFFER = normalBuffer)
+  // ARRAY_BUFFER = normalBuffer
   gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-  // Записываем данные в буфер
-  //setNormals(gl);
-
-  webglLessonsUI.setupUI(document.querySelector("#ui"), data, [
-    { type: "checkbox", key: "frame", change: draw },
-  ]);
-  webglLessonsUI.setupUI(document.querySelector("#ui2"), data, [
-    { type: "checkbox", key: "color", change: draw },
-  ]);
-  webglLessonsUI.setupUI(document.querySelector("#ui3"), data, [
-    { type: "checkbox", key: "texture", change: draw },
-  ]);
-  webglLessonsUI.setupUI(document.querySelector("#ui4"), data, [
-    { type: "checkbox", key: "anaglyph", change: draw },
-  ]);
-  LoadTexture();
 
   webglLessonsUI.setupSlider("#convergence", {
     value: convergence,
@@ -639,37 +616,6 @@ function updateNearClippingDistance(event, ui) {
   draw();
 }
 
-function LoadTexture() {
-  const texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-  // Fill the texture with a 1x1 blue pixel.
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    0,
-    1,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    new Uint8Array([0, 0, 25, 55])
-  );
-  // Asynchronously load an image
-  var image = new Image();
-  image.crossOrigin = "anonymous";
-  image.src = "https://webglfundamentals.org/webgl/resources/f-texture.png";
-  image.addEventListener("load", () => {
-    // Now that the image has loaded make copy it to the texture.
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-
-    draw();
-  });
-}
-
 function createProgram(gl, vShader, fShader) {
   const vsh = gl.createShader(gl.VERTEX_SHADER);
   gl.shaderSource(vsh, vShader);
@@ -721,6 +667,8 @@ function init() {
       "</p>";
     return;
   }
+
+  spaceball = new TrackballRotator(canvas, draw, 0);
 
   draw();
 }
